@@ -76,7 +76,7 @@ x-airflow-common:
     ## Configurations Added manually
     AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 90
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
-    AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 3
+    #AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 3
 
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
