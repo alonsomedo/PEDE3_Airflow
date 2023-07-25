@@ -8,7 +8,7 @@ dag = DAG(dag_id="dag_concurrency",
           start_date=datetime(2023,7,1),
           schedule="@daily",
           catchup=True,
-          max_active_runs=4)
+          max_active_runs=5)
 
 start = EmptyOperator(dag=dag, task_id="start")
 end = EmptyOperator(dag=dag, task_id="end")
