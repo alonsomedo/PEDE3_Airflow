@@ -301,5 +301,20 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # Containers added manually
+  mysql_dwh:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: dwh
+      MYSQL_DATABASE: dwh
+    container_name: mysql_dwh
+    volumes:
+      - mysql-dwh-volume:/var/lib/mysql
+    ports:
+      - 3306:3306
+
 volumes:
   postgres-db-volume:
+  # Volumes added manually
+  mysql-dwh-volume:
