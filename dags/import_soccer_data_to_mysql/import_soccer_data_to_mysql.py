@@ -1,0 +1,102 @@
+import logging
+import os
+from datetime import date, datetime, timedelta
+
+from utils.common import get_config
+from utils.common import get_md
+from utils.common import get_sql
+
+
+from airflow import DAG
+from airflow.models import Variable
+from airflow.operators.dummy_operator import DummyOperator
+from airflow.operators.python_operator import PythonOperator
+from airflow.providers.mysql.operators.mysql import MySqlOperator
+from airflow.providers.mysql.hooks.mysql import MySqlHook
+from airflow.providers.http.sensors.http import HttpSensor
+from airflow.utils.trigger_rule import TriggerRule
+
+# Importing python functions
+from import_soccer_data_to_mysql.functions.get_soccer_team_players import get_soccer_team_players
+from import_soccer_data_to_mysql.functions.load_soccer_team_players import load_soccer_team_players
+
+# Declare configuration variables
+dag_file_name = os.path.basename(__file__).split('.')[0]
+dag_config = get_config(dag_file_name = dag_file_name, config_filename = 'dag_config.yaml')
+pipeline_config = get_config(dag_file_name = dag_file_name, config_filename = 'pipeline_config.yaml')
+
+env=os.getenv('ENVIRONMENT')
+default_arguments = dag_config['default_args'][env]
+
+# Getting variables of pipeline configs
+endpoint = pipeline_config['endpoint']
+soccer_teams_ids = pipeline_config['soccer_teams_ids']
+
+#Airflow docstring
+doc_md = get_md(dag_file_name, 'README.md')
+
+#logging.basicConfig(level=logging.INFO)
+
+#Declare DAG insrtance and DAG operators
+with DAG(dag_file_name,
+          description='Very short description (optional)',
+          start_date=datetime.strptime(dag_config['dag_args'][env]["start_date"], '%Y-%m-%d'),
+          max_active_runs=dag_config['dag_args'][env]["max_active_runs"],
+          catchup=dag_config['dag_args'][env]["catchup"],
+          tags = dag_config['tags'],
+          schedule_interval=dag_config['schedule'][env],
+          default_args=default_arguments,
+          dagrun_timeout=timedelta(hours=dag_config["dag_run_timeout"]),
+          doc_md=doc_md,
+          ) as dag:
+    
+    ##### DECLARING THE OPERATORS ######
+    
+    # Declare Dummy Operators
+    start = DummyOperator(task_id='start')
+    end = DummyOperator(task_id='end')
+    
+    create_table = MySqlOperator(
+        task_id="create_table_if_not_exists",
+        mysql_conn_id="mysql_default",
+        database="dwh",
+        sql=get_sql(dag_file_name, 'create_table.sql')
+    )
+    
+    for team_name, team_id in soccer_teams_ids.items():
+        create_tmp_table_by_team = MySqlOperator(
+            task_id=f"create_{team_name}_tmp_table",
+            mysql_conn_id="mysql_default",
+            database="dwh",
+            sql=get_sql(dag_file_name, 'create_tmp_table_by_team.sql'),
+            params={
+                'team_name': team_name
+            }
+        )
+        
+        get_soccer_players = PythonOperator(
+            task_id=f'get_{team_name}_players',
+            python_callable=get_soccer_team_players,
+            op_args=[team_id, endpoint]
+        )
+
+        load_soccer_players = PythonOperator(
+            task_id=f'load_{team_name}_players',
+            python_callable=load_soccer_team_players,
+            op_kwargs={
+                "team_id": team_id,
+                'team_name': team_name
+            }
+        )
+
+        merge = MySqlOperator(
+            task_id=f"merge_{team_name}into_soccer_table",
+            mysql_conn_id="mysql_default",
+            database="dwh",
+            sql=get_sql(dag_file_name, 'merge_into_soccer_table.sql'),
+            params={
+                'team_name': team_name
+            }
+        )
+  
+        start >> create_table >> create_tmp_table_by_team >> get_soccer_players >> load_soccer_players >> merge >> end

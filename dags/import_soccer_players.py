@@ -10,6 +10,7 @@ from airflow.providers.mysql.operators.mysql import MySqlOperator
 from airflow.providers.mysql.hooks.mysql import MySqlHook
 
 from airflow.utils.edgemodifier import Label
+from airflow.models import Variable
 
 from datetime import datetime, timedelta
 from pandas import json_normalize
@@ -27,7 +28,7 @@ with DAG(
         params = {'team': team_id}
         headers = {
             'x-rapidapi-host': "v3.football.api-sports.io",
-            'x-rapidapi-key': "43307bbe1dd253b7a85022853ecf2b51" # This shouldn't be here. Secrets, api's and sensitive information musn't be visible for users.
+            'x-rapidapi-key': Variable.get('soccer_secret_key')
         }
         response = requests.get(url=url, params=params, headers=headers)
         response = json.loads(response.text)["response"][0]["players"]
