@@ -18,6 +18,9 @@ from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from airflow.providers.slack.transfers.sql_to_slack import SqlToSlackOperator
 from airflow.utils.trigger_rule import TriggerRule
 
+# Importing custom operators
+from custom.operators.rowcount_to_slack import RowCountToSlackChannelOperator
+
 # Importing python functions
 from import_soccer_data_to_mysql.functions.get_soccer_team_players import get_soccer_team_players
 from import_soccer_data_to_mysql.functions.load_soccer_team_players import load_soccer_team_players
@@ -65,22 +68,32 @@ with DAG(dag_file_name,
         endpoint='players/squads_v2'
     )
 
-    confirmation_to_slack =  SlackWebhookOperator(
-        slack_webhook_conn_id='slack_webhook_conn',
-        task_id='confirmation_to_slack',
-        message='The process has finished successfully. Data was loaded for {{ ds }}. :+1:',
-        channel='#airflow_notifications',
-        icon_emoji=':+1:'
-    )
+    # confirmation_to_slack =  SlackWebhookOperator(
+    #     slack_webhook_conn_id='slack_webhook_conn',
+    #     task_id='confirmation_to_slack',
+    #     message='The process has finished successfully. Data was loaded for {{ ds }}. :+1:',
+    #     channel='#airflow_notifications',
+    #     icon_emoji=':+1:'
+    # )
 
-    results_to_slack = SqlToSlackOperator(
-        task_id='results_to_slack',
-        slack_conn_id='slack_webhook_conn',
-        sql_conn_id='mysql_default',
-        sql=get_sql(dag_file_name, 'results_to_slack.sql'),
-        slack_channel='#airflow_notifications',
-        slack_message='{{ results_df }}'
+    # results_to_slack = SqlToSlackOperator(
+    #     task_id='results_to_slack',
+    #     slack_conn_id='slack_webhook_conn',
+    #     sql_conn_id='mysql_default',
+    #     sql=get_sql(dag_file_name, 'results_to_slack.sql'),
+    #     slack_channel='#airflow_notifications',
+    #     slack_message='{{ results_df }}'
+    # )
+
+    row_count_to_slack = RowCountToSlackChannelOperator(
+        task_id='row_count_to_slack',
+        slack_conn='slack_webhook_conn',
+        mysql_conn='mysql_default',
+        message='The soccer players were loaded successfully.',
+        table_name='dwh.soccer_players',
+        table_predicate="WHERE etl_date = '20230807'"
     )
+    
     
     create_table = MySqlOperator(
         task_id="create_table_if_not_exists",
@@ -126,4 +139,5 @@ with DAG(dag_file_name,
         )
   
         start >> create_table >> api_availability >> create_tmp_table_by_team
-        create_tmp_table_by_team >> get_soccer_players >> load_soccer_players >> merge >> confirmation_to_slack >> results_to_slack >> end
+        #create_tmp_table_by_team >> get_soccer_players >> load_soccer_players >> merge >> confirmation_to_slack >> results_to_slack >> end
+        create_tmp_table_by_team >> get_soccer_players >> load_soccer_players >> merge >> row_count_to_slack >> end
