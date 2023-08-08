@@ -14,6 +14,8 @@ from airflow.operators.python_operator import PythonOperator
 from airflow.providers.mysql.operators.mysql import MySqlOperator
 from airflow.providers.mysql.hooks.mysql import MySqlHook
 from airflow.providers.http.sensors.http import HttpSensor
+from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
+from airflow.providers.slack.transfers.sql_to_slack import SqlToSlackOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 # Importing python functions
@@ -56,6 +58,30 @@ with DAG(dag_file_name,
     start = DummyOperator(task_id='start')
     end = DummyOperator(task_id='end')
     
+    api_availability = HttpSensor(
+        task_id='api_availability',
+        http_conn_id='api_soccer',
+        method='GET',
+        endpoint='players/squads_v2'
+    )
+
+    confirmation_to_slack =  SlackWebhookOperator(
+        slack_webhook_conn_id='slack_webhook_conn',
+        task_id='confirmation_to_slack',
+        message='The process has finished successfully. Data was loaded for {{ ds }}. :+1:',
+        channel='#airflow_notifications',
+        icon_emoji=':+1:'
+    )
+
+    results_to_slack = SqlToSlackOperator(
+        task_id='results_to_slack',
+        slack_conn_id='slack_webhook_conn',
+        sql_conn_id='mysql_default',
+        sql=get_sql(dag_file_name, 'results_to_slack.sql'),
+        slack_channel='#airflow_notifications',
+        slack_message='{{ results_df }}'
+    )
+    
     create_table = MySqlOperator(
         task_id="create_table_if_not_exists",
         mysql_conn_id="mysql_default",
@@ -90,7 +116,7 @@ with DAG(dag_file_name,
         )
 
         merge = MySqlOperator(
-            task_id=f"merge_{team_name}into_soccer_table",
+            task_id=f"merge_{team_name}_into_soccer_table",
             mysql_conn_id="mysql_default",
             database="dwh",
             sql=get_sql(dag_file_name, 'merge_into_soccer_table.sql'),
@@ -99,4 +125,5 @@ with DAG(dag_file_name,
             }
         )
   
-        start >> create_table >> create_tmp_table_by_team >> get_soccer_players >> load_soccer_players >> merge >> end
+        start >> create_table >> api_availability >> create_tmp_table_by_team
+        create_tmp_table_by_team >> get_soccer_players >> load_soccer_players >> merge >> confirmation_to_slack >> results_to_slack >> end
